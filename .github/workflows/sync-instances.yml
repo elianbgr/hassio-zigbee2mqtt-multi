@@ -1,0 +1,50 @@
+name: Sync with upstream
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream zigbee2mqtt directory
+        run: |
+          mkdir -p /tmp/upstream
+          curl -sL https://github.com/zigbee2mqtt/hassio-zigbee2mqtt/archive/refs/heads/master.tar.gz \
+            | tar xz -C /tmp/upstream
+          rm -rf zigbee2mqtt
+          cp -r /tmp/upstream/hassio-zigbee2mqtt-master/zigbee2mqtt zigbee2mqtt
+
+      - name: Regenerate instance directories
+        run: |
+          for INSTANCE in 7 8; do
+            DIR="zigbee2mqtt-${INSTANCE}"
+            rm -rf "${DIR}"
+            cp -r zigbee2mqtt "${DIR}"
+            jq --arg name "Zigbee2MQTT ${INSTANCE}" --arg slug "${DIR}" \
+               '.name = $name | .slug = $slug' \
+               "${DIR}/config.json" > "${DIR}/config.json.tmp"
+            mv "${DIR}/config.json.tmp" "${DIR}/config.json"
+          done
+
+      - name: Commit and push if changes
+        run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: sync with upstream"
+            git push
+          fi
